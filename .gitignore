@@ -1,0 +1,14 @@
+# Raw datasets (too big for repo)
+data/raw/
+
+# Keep processed data folder structure
+!data/processed/.gitkeep
+
+# Python cache files
+__pycache__/
+*.pyc
+
+# Virtual environments / secrets
+.env
+.venv
+env/
