@@ -1,0 +1,8 @@
+pandas
+requests
+duckdb
+scikit-learn
+streamlit
+pydeck
+joblib
+pyarrow
