@@ -5,9 +5,15 @@ import duckdb
 import pandas as pd
 from datetime import datetime, timedelta
 
-# Config
-YEAR = 2025
-MONTH = 1
+
+def get_target_month():
+    today = datetime.now()
+    first_of_month = today.replace(day=1)
+    last_month = first_of_month - timedelta(days=1)
+    return last_month.year, last_month.month
+
+
+YEAR, MONTH = get_target_month()
 MONTH_STR = f"{YEAR}{MONTH:02d}"
 CITIBIKE_URL = f"https://s3.amazonaws.com/tripdata/{MONTH_STR}-citibike-tripdata.zip"
 
@@ -29,10 +35,11 @@ def fetch_weather_data():
 
     start_date = f"{YEAR}-{MONTH:02d}-01"
     if MONTH == 12:
-        next_month = datetime(YEAR + 1, 1, 1)
+        next_month_start = datetime(YEAR + 1, 1, 1)
     else:
-        next_month = datetime(YEAR, MONTH + 1, 1)
-    end_date = (next_month - timedelta(days=1)).strftime("%Y-%m-%d")
+        next_month_start = datetime(YEAR, MONTH + 1, 1)
+
+    end_date = (next_month_start - timedelta(days=1)).strftime("%Y-%m-%d")
 
     url = "https://archive-api.open-meteo.com/v1/archive"
     params = {
@@ -45,6 +52,7 @@ def fetch_weather_data():
     }
 
     r = requests.get(url, params=params)
+    r.raise_for_status()
     hourly = r.json()["hourly"]
 
     return pd.DataFrame({
@@ -56,16 +64,18 @@ def fetch_weather_data():
 
 
 def fetch_citibike_data():
-    print("Downloading Citi Bike data")
+    print(f"Downloading Citi Bike data: {MONTH_STR}")
 
     zip_path = os.path.join(RAW_DIR, "citibike_data.zip")
     r = requests.get(CITIBIKE_URL, stream=True)
+
+    if r.status_code == 404:
+        raise FileNotFoundError(f"Data for {MONTH_STR} not available")
 
     with open(zip_path, "wb") as f:
         for chunk in r.iter_content(chunk_size=8192):
             f.write(chunk)
 
-    print("Extracting CSVs")
     csv_files = []
     with zipfile.ZipFile(zip_path, "r") as z:
         for name in z.namelist():
@@ -119,7 +129,8 @@ def transform_and_load(df_weather):
         w.wind_speed,
         b.trip_count
     FROM bike_agg b
-    LEFT JOIN weather_data w ON b.hour_timestamp = w.time
+    LEFT JOIN weather_data w
+        ON b.hour_timestamp = w.time
     WHERE month(b.hour_timestamp) = {MONTH}
     """
 
@@ -130,13 +141,27 @@ def transform_and_load(df_weather):
 
 def main():
     ensure_directories()
-    df_weather = fetch_weather_data()
-    csv_files = fetch_citibike_data()
-    transform_and_load(df_weather)
 
-    for f in csv_files:
-        if os.path.exists(f):
-            os.remove(f)
+    try:
+        df_weather = fetch_weather_data()
+        csv_files = fetch_citibike_data()
+        transform_and_load(df_weather)
+
+        for f in csv_files:
+            if os.path.exists(f):
+                os.remove(f)
+
+        zip_path = os.path.join(RAW_DIR, "citibike_data.zip")
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+
+        print("ETL complete")
+
+    except FileNotFoundError as e:
+        print(str(e))
+    except Exception as e:
+        print(f"Error: {e}")
+        exit(1)
 
 
 if __name__ == "__main__":
