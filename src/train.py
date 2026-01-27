@@ -36,9 +36,11 @@ def train_model():
     X, y = feature_engineering(df)
 
     print("Splitting data")
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
+    df = df.sort_values("hour_timestamp")
+
+    split_idx = int(len(df) * 0.8)
+    X_train, X_test = X[:split_idx], X[split_idx:]
+    y_train, y_test = y[:split_idx], y[split_idx:]
 
     print("Training Random Forest")
     model = RandomForestRegressor(
