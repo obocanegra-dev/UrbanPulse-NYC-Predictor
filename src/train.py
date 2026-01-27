@@ -56,6 +56,10 @@ def train_model():
     rmse = np.sqrt(mean_squared_error(y_test, preds))
     print(f"RMSE: {rmse:.2f}")
 
+    baseline_preds = np.repeat(y_train.mean(), len(y_test))
+    baseline_rmse = np.sqrt(mean_squared_error(y_test, baseline_preds))
+    print(f"Baseline RMSE: {baseline_rmse:.2f}")
+
     print(f"Saving model to {MODEL_FILE}")
     joblib.dump(model, MODEL_FILE)
 
