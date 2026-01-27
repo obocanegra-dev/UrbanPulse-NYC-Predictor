@@ -92,9 +92,15 @@ def transform_and_load(df_weather):
     con = duckdb.connect(database=":memory:")
     con.register("weather_data", df_weather)
 
+    history_exists = os.path.exists(OUTPUT_FILE)
+    if history_exists:
+        con.execute(
+            f"CREATE OR REPLACE VIEW history_data AS SELECT * FROM '{OUTPUT_FILE}'"
+        )
+
     csv_glob_path = os.path.join(RAW_DIR, "*.csv")
 
-    query = f"""
+    new_data_query = f"""
     WITH bike_clean AS (
         SELECT
             start_station_name,
@@ -134,8 +140,22 @@ def transform_and_load(df_weather):
     WHERE month(b.hour_timestamp) = {MONTH}
     """
 
-    print(f"Saving parquet to {OUTPUT_FILE}")
-    con.execute(f"COPY ({query}) TO '{OUTPUT_FILE}' (FORMAT 'parquet')")
+    con.execute(f"CREATE OR REPLACE VIEW new_data_view AS {new_data_query}")
+
+    if history_exists:
+        final_query = """
+        SELECT DISTINCT * FROM (
+            SELECT * FROM history_data
+            UNION ALL
+            SELECT * FROM new_data_view
+        )
+        ORDER BY hour_timestamp DESC
+        """
+    else:
+        final_query = "SELECT * FROM new_data_view ORDER BY hour_timestamp DESC"
+
+    print(f"Saving data to {OUTPUT_FILE}")
+    con.execute(f"COPY ({final_query}) TO '{OUTPUT_FILE}' (FORMAT 'parquet')")
     con.close()
 
 
