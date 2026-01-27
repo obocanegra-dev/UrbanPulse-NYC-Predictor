@@ -1,4 +1,4 @@
-name: Monthly Data Update
+name: Monthly Data Update & Retrain
 
 on:
   schedule:
@@ -9,15 +9,13 @@ permissions:
   contents: write
 
 jobs:
-  build-and-run:
+  pipeline:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
@@ -29,11 +27,14 @@ jobs:
       - name: Run ETL
         run: python src/etl.py
 
-      - name: Commit results
+      - name: Retrain model
+        run: python src/train.py
+
+      - name: Commit updated data and model
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
-          git add data/processed/daily_demand.parquet
-          git diff --staged --quiet || git commit -m "chore(data): update daily demand for $(date +'%Y-%m')"
+          git add data/processed/daily_demand.parquet model.pkl
+          git diff --staged --quiet || git commit -m "chore: monthly data refresh and model retrain"
           git push
