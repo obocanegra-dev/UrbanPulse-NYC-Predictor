@@ -148,11 +148,15 @@ def transform_and_load(df_weather):
 
     if history_exists:
         final_query = """
-        SELECT DISTINCT * FROM (
-            SELECT * FROM history_data
-            UNION ALL
-            SELECT * FROM new_data_view
+        SELECT *
+        FROM new_data_view
+        WHERE (start_station_name, hour_timestamp)
+        NOT IN (
+          SELECT start_station_name, hour_timestamp
+          FROM history_data
         )
+        UNION ALL
+        SELECT * FROM history_data
         ORDER BY hour_timestamp DESC
         """
     else:
