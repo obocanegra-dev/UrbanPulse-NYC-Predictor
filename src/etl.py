@@ -108,7 +108,11 @@ def transform_and_load(df_weather):
             start_lng,
             started_at,
             ended_at,
-            date_diff('second', started_at, ended_at) AS duration_sec
+            date_diff(
+              'second',
+              CAST(started_at AS TIMESTAMP),
+              CAST(ended_at AS TIMESTAMP)
+            ) AS duration_sec
         FROM read_csv_auto('{csv_glob_path}', ignore_errors=true)
     ),
     bike_agg AS (
