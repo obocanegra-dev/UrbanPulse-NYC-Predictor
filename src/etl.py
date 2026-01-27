@@ -140,7 +140,7 @@ def transform_and_load(df_weather):
         b.trip_count
     FROM bike_agg b
     LEFT JOIN weather_data w
-        ON b.hour_timestamp = w.time
+        ON b.hour_timestamp = date_trunc('hour', w.time)
     WHERE month(b.hour_timestamp) = {MONTH}
     """
 
