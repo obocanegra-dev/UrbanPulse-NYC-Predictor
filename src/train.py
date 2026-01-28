@@ -13,20 +13,26 @@ def load_data():
     return duckdb.query(f"SELECT * FROM '{INPUT_FILE}'").to_df()
 
 
-def feature_engineering(df):
+def add_basic_features(df):
+    df = df.copy()
+    df = df.sort_values(["start_station_name", "hour_timestamp"])
+
+    df["is_weekend"] = df["day_of_week"].isin([0, 6]).astype(int)
+    df['hour_sin'] = np.sin(2 * np.pi * df['hour_of_day'] / 24)
+    df['hour_cos'] = np.cos(2 * np.pi * df['hour_of_day'] / 24)
+    df['day_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
+    df['day_cos'] = np.cos(2 * np.pi * df['day_of_week'] / 7)
     df["is_raining"] = (df["precipitation"] > 0.1).astype(int)
+    df["trip_count_lag1"] = df.groupby("start_station_name")["trip_count"].shift(1)
+    df["trip_count_rolling3"] = (
+    df.groupby("start_station_name")["trip_count"]
+      .shift(1)
+      .rolling(3, min_periods=1)
+      .mean()
+      .reset_index(0, drop=True)
+    )
 
-    features = [
-        "hour_of_day",
-        "day_of_week",
-        "temperature",
-        "is_raining",
-        "start_lat",
-        "start_lng"
-    ]
-
-    target = "trip_count"
-    return df[features], df[target]
+    return df
 
 
 def train_model():
@@ -34,17 +40,45 @@ def train_model():
 
     df = df.sort_values("hour_timestamp")
 
-    X, y = feature_engineering(df)
-
     split_idx = int(len(df) * 0.8)
-    X_train, X_test = X[:split_idx], X[split_idx:]
-    y_train, y_test = y[:split_idx], y[split_idx:]
+    train_df = df.iloc[:split_idx].copy()
+    test_df = df.iloc[split_idx:].copy()
+
+    station_popularity = train_df.groupby("start_station_name")["trip_count"].mean().reset_index()
+    station_popularity.columns = ["start_station_name", "station_avg_demand"]
+
+    train_df = train_df.merge(station_popularity, on="start_station_name", how="left")
+    test_df = test_df.merge(station_popularity, on="start_station_name", how="left")
+
+    global_mean = train_df["trip_count"].mean()
+    train_df["station_avg_demand"] = train_df["station_avg_demand"].fillna(global_mean)
+    test_df["station_avg_demand"] = test_df["station_avg_demand"].fillna(global_mean)
+
+    train_df = add_basic_features(train_df)
+    test_df = add_basic_features(test_df)
+
+    features = [
+        "hour_sin", "hour_cos",
+        "day_sin", "day_cos",
+        "is_weekend",
+        "temperature",
+        "is_raining",
+        "station_avg_demand",
+        "start_lat",
+        "start_lng", "trip_count_lag1", "trip_count_rolling3"
+    ]
+    target = "trip_count"
+
+    X_train = train_df[features]
+    y_train = train_df[target]
+    X_test = test_df[features]
+    y_test = test_df[target]
 
     print("Training XGBoost...")
     model = xgb.XGBRegressor(
-        n_estimators=100,
-        max_depth=10,
-        learning_rate=0.01,
+        n_estimators=200,
+        max_depth=6,
+        learning_rate=0.006,
         n_jobs=-1,
         random_state=42,
         objective='reg:squarederror'
@@ -60,15 +94,16 @@ def train_model():
     print(f"Baseline RMSE: {baseline_rmse:.2f}")
 
     print("Feature importance:")
-    for name, score in zip(X.columns, model.feature_importances_):
+    for name, score in zip(features, model.feature_importances_):
         print(f"  {name}: {score:.3f}")
 
     artifact = {
         "model": model,
-        "features": X.columns.tolist()
+        "features": features,
+        "station_stats": station_popularity
     }
 
-    print(f"Saving model bundle (Model + Features) to {MODEL_FILE}")
+    print(f"Saving model bundle to {MODEL_FILE}")
     joblib.dump(artifact, MODEL_FILE)
 
 
