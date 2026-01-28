@@ -26,9 +26,8 @@ def load_data():
 
 
 @st.cache_resource
-def load_model():
-    if not os.path.exists(MODEL_PATH):
-        return None
+def load_model_bundle():
+    if not os.path.exists(MODEL_PATH): return None
     return joblib.load(MODEL_PATH)
 
 
@@ -40,7 +39,7 @@ st.title("UrbanPulse - NYC Bike Demand Predictor")
 st.markdown("Bike demand forecasting for Citi Bike NYC.")
 
 df = load_data()
-model = load_model()
+bundle = load_model_bundle()
 
 if df is None:
     st.error("Processed data not found. Run ETL first.")
@@ -119,15 +118,15 @@ with tab2:
 with tab3:
     st.header("Demand Prediction")
 
-    if model is None:
+    if bundle is None:
         st.warning("Model not found. Train it first.")
     else:
-        col1, col2, col3, col4 = st.columns(4)
+        model = bundle["model"]
+        required_features = bundle["features"]
 
-        with col1:
-            input_hour = st.slider("Hour", 0, 23, 17)
-        with col2:
-            input_temp = st.slider("Temperature (°C)", -10, 40, 25)
+        col1, col2, col3, col4 = st.columns(4)
+        with col1: input_hour = st.slider("Hour", 0, 23, 17)
+        with col2: input_temp = st.slider("Temperature (°C)", -10, 40, 25)
         with col3:
             input_rain = st.radio("Raining?", ["No", "Yes"])
             is_raining_val = 1 if input_rain == "Yes" else 0
@@ -147,15 +146,11 @@ with tab3:
         X_pred["temperature"] = input_temp
         X_pred["is_raining"] = is_raining_val
 
-        feature_cols = [
-            "hour_of_day",
-            "day_of_week",
-            "temperature",
-            "is_raining",
-            "start_lat",
-            "start_lng"
-        ]
-        X_pred = X_pred[feature_cols]
+        try:
+            X_pred = X_pred[required_features]
+        except KeyError as e:
+            st.error(f"Error: The model expects features that are missing: {e}")
+            st.stop()
 
         preds = model.predict(X_pred)
         stations["predicted_demand"] = preds.clip(min=0)
