@@ -67,9 +67,9 @@ with tab1:
 with tab2:
     st.header("Exploratory Analysis")
 
-    col1, col2 = st.columns([2, 1])
+    col_map, col_stats = st.columns([3, 2])
 
-    with col1:
+    with col_map:
         map_data = (
             df.groupby(["start_lat", "start_lng"])
             .agg({"trip_count": "sum"})
@@ -82,7 +82,7 @@ with tab2:
             get_position=["start_lng", "start_lat"],
             elevation_scale=1,
             radius=50,
-            get_fill_color=[255, 165, 0, 140],
+            get_fill_color=[255, 165, 0, 100],
             extruded=True,
             pickable=True,
             get_elevation="trip_count",
@@ -103,7 +103,8 @@ with tab2:
             )
         )
 
-    with col2:
+    with col_stats:
+        st.subheader("Top 10 Stations")
         top_stations = (
             df.groupby("start_station_name")["trip_count"]
             .sum()
@@ -112,8 +113,11 @@ with tab2:
         )
         st.bar_chart(top_stations, horizontal=True)
 
-    hourly_counts = df.groupby("hour_of_day")["trip_count"].sum()
-    st.bar_chart(hourly_counts)
+        st.divider()
+
+        st.subheader("Demand by Hour")
+        hourly_counts = df.groupby("hour_of_day")["trip_count"].sum()
+        st.bar_chart(hourly_counts)
 
 
 with tab3:
