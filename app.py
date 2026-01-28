@@ -77,28 +77,29 @@ with tab2:
         )
 
         layer = pdk.Layer(
-            "HexagonLayer",
+            "ColumnLayer",
             map_data,
             get_position=["start_lng", "start_lat"],
-            elevation_scale=50,
-            elevation_range=[0, 3000],
+            elevation_scale=1,
+            radius=50,
+            get_fill_color=[255, 165, 0, 140],
             extruded=True,
             pickable=True,
-            get_elevation="trip_count"
+            get_elevation="trip_count",
         )
 
         view_state = pdk.ViewState(
             latitude=40.74,
             longitude=-73.99,
-            zoom=11,
-            pitch=50
+            zoom=10.5,
+            pitch=60
         )
 
         st.pydeck_chart(
             pdk.Deck(
                 layers=[layer],
                 initial_view_state=view_state,
-                tooltip={"html": "<b>Trips:</b> {elevationValue}"}
+                tooltip={"html": "<b>Trips:</b> {trip_count}"}
             )
         )
 
