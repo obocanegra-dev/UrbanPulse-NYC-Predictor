@@ -62,7 +62,7 @@ with tab1:
         datetime.fromtimestamp(stats.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
     )
 
-    st.dataframe(df.head(10), use_container_width=True)
+    st.dataframe(df.head(10), width='stretch')
 
 
 with tab2:
@@ -125,12 +125,14 @@ with tab2:
                 )
             )
         )
-        st.altair_chart(chart, use_container_width=True)
+        st.altair_chart(chart, width='stretch')
 
         st.divider()
 
         st.subheader("Demand by Hour")
         hourly_counts = df.groupby("hour_of_day")["trip_count"].sum()
+        hourly_counts.index.name = "Hour of Day"
+        hourly_counts.name = "Total Trips"
         st.bar_chart(hourly_counts)
 
 
@@ -223,5 +225,14 @@ with tab3:
             st.dataframe(
                 hotspots,
                 hide_index=True,
-                use_container_width=True,
+                width='stretch',
+                column_config={
+                    "start_station_name": st.column_config.TextColumn(
+                        "Station"
+                    ),
+                    "predicted_demand": st.column_config.NumberColumn(
+                        "Predicted Demand",
+                        format="%.1f"
+                    )
+                }
             )
