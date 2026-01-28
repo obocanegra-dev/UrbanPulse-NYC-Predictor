@@ -33,10 +33,10 @@ def feature_engineering(df):
 
 def train_model():
     df = load_data()
-    X, y = feature_engineering(df)
 
-    print("Splitting data")
     df = df.sort_values("hour_timestamp")
+
+    X, y = feature_engineering(df)
 
     split_idx = int(len(df) * 0.8)
     X_train, X_test = X[:split_idx], X[split_idx:]
@@ -49,16 +49,19 @@ def train_model():
         n_jobs=-1,
         random_state=42
     )
-
     model.fit(X_train, y_train)
 
     preds = model.predict(X_test)
     rmse = np.sqrt(mean_squared_error(y_test, preds))
-    print(f"RMSE: {rmse:.2f}")
+    print(f"Model RMSE: {rmse:.2f}")
 
-    baseline_preds = np.repeat(y_train.mean(), len(y_test))
-    baseline_rmse = np.sqrt(mean_squared_error(y_test, baseline_preds))
+    baseline = np.repeat(y_train.mean(), len(y_test))
+    baseline_rmse = np.sqrt(mean_squared_error(y_test, baseline))
     print(f"Baseline RMSE: {baseline_rmse:.2f}")
+
+    print("Feature importance:")
+    for name, score in zip(X.columns, model.feature_importances_):
+        print(f"  {name}: {score:.3f}")
 
     print(f"Saving model to {MODEL_FILE}")
     joblib.dump(model, MODEL_FILE)
