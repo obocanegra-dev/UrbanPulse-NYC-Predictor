@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import pydeck as pdk
+import altair as alt
 import joblib
 import os
 from datetime import datetime
@@ -110,8 +111,21 @@ with tab2:
             .sum()
             .nlargest(10)
             .sort_values()
+            .reset_index()
         )
-        st.bar_chart(top_stations, horizontal=True)
+        chart = (
+            alt.Chart(top_stations)
+            .mark_bar()
+            .encode(
+                x=alt.X("trip_count:Q", title="Trips"),
+                y=alt.Y(
+                    "start_station_name:N",
+                    sort="-x",
+                    title="Station"
+                )
+            )
+        )
+        st.altair_chart(chart, use_container_width=True)
 
         st.divider()
 
