@@ -184,33 +184,44 @@ with tab3:
 
         stations["color"] = stations["predicted_demand"].apply(get_color)
 
-        layer = pdk.Layer(
-            "ScatterplotLayer",
-            stations,
-            get_position=["start_lng", "start_lat"],
-            get_radius="predicted_demand * 10",
-            get_fill_color="color",
-            pickable=True
-        )
-
-        view_state = pdk.ViewState(
-            latitude=40.74,
-            longitude=-73.99,
-            zoom=11.5
-        )
-
-        st.pydeck_chart(
-            pdk.Deck(
-                layers=[layer],
-                initial_view_state=view_state,
-                tooltip={
-                    "html": "<b>{start_station_name}</b><br/>Demand: {predicted_demand}"
-                }
-            )
-        )
-
         hotspots = (
             stations.sort_values("predicted_demand", ascending=False)
-            .head(5)
+            .head(10)
+            [["start_station_name", "predicted_demand"]]
         )
-        st.table(hotspots[["start_station_name", "predicted_demand"]])
+
+        col_map, col_table = st.columns([3, 1])
+
+        with col_map:
+            layer = pdk.Layer(
+                "ScatterplotLayer",
+                stations,
+                get_position=["start_lng", "start_lat"],
+                get_radius="predicted_demand * 10",
+                get_fill_color="color",
+                pickable=True
+            )
+
+            view_state = pdk.ViewState(
+                latitude=40.74,
+                longitude=-73.99,
+                zoom=11.5
+            )
+
+            st.pydeck_chart(
+                pdk.Deck(
+                    layers=[layer],
+                    initial_view_state=view_state,
+                    tooltip={
+                        "html": "<b>{start_station_name}</b><br/>Demand: {predicted_demand}"
+                    }
+                )
+            )
+
+        with col_table:
+            st.subheader("Top Predicted")
+            st.dataframe(
+                hotspots,
+                hide_index=True,
+                use_container_width=True,
+            )
