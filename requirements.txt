@@ -6,3 +6,4 @@ streamlit
 pydeck
 joblib
 pyarrow
+xgboost
