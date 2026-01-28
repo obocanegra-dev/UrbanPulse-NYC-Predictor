@@ -63,8 +63,13 @@ def train_model():
     for name, score in zip(X.columns, model.feature_importances_):
         print(f"  {name}: {score:.3f}")
 
-    print(f"Saving model to {MODEL_FILE}")
-    joblib.dump(model, MODEL_FILE)
+    artifact = {
+        "model": model,
+        "features": X.columns.tolist()
+    }
+
+    print(f"Saving model bundle (Model + Features) to {MODEL_FILE}")
+    joblib.dump(artifact, MODEL_FILE)
 
 
 if __name__ == "__main__":
