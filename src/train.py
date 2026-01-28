@@ -1,9 +1,7 @@
-import pandas as pd
 import duckdb
 import joblib
 import numpy as np
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
+import xgboost as xgb
 from sklearn.metrics import mean_squared_error
 
 INPUT_FILE = "data/processed/daily_demand.parquet"
@@ -42,12 +40,14 @@ def train_model():
     X_train, X_test = X[:split_idx], X[split_idx:]
     y_train, y_test = y[:split_idx], y[split_idx:]
 
-    print("Training Random Forest")
-    model = RandomForestRegressor(
+    print("Training XGBoost...")
+    model = xgb.XGBRegressor(
         n_estimators=100,
         max_depth=10,
+        learning_rate=0.01,
         n_jobs=-1,
-        random_state=42
+        random_state=42,
+        objective='reg:squarederror'
     )
     model.fit(X_train, y_train)
 
