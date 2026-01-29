@@ -47,7 +47,7 @@ def train_model():
     station_popularity = train_df.groupby("start_station_name")["trip_count"].mean().reset_index()
     station_popularity.columns = ["start_station_name", "station_avg_demand"]
 
-    hourly_stats = df.groupby(["start_station_name", "hour_of_day"])["trip_count"].mean().reset_index()
+    hourly_stats = train_df.groupby(["start_station_name", "hour_of_day"])["trip_count"].mean().reset_index()
     hourly_stats.columns = ["start_station_name", "hour_of_day", "avg_hourly_trips"]
 
     train_df = train_df.merge(station_popularity, on="start_station_name", how="left")
