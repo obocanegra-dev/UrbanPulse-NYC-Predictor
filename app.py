@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import pydeck as pdk
 import altair as alt
 import joblib
@@ -144,6 +145,8 @@ with tab3:
     else:
         model = bundle["model"]
         required_features = bundle["features"]
+        station_stats = bundle["station_stats"]
+        hourly_stats = bundle["hourly_stats"]
 
         col1, col2, col3, col4 = st.columns(4)
         with col1: input_hour = st.slider("Hour", 0, 23, 17)
@@ -160,12 +163,43 @@ with tab3:
             )
 
         stations = get_unique_stations(df)
+        X_pred = stations.copy()
 
         X_pred = stations.copy()
         X_pred["hour_of_day"] = input_hour
         X_pred["day_of_week"] = input_day
         X_pred["temperature"] = input_temp
         X_pred["is_raining"] = is_raining_val
+        X_pred["is_weekend"] = 1 if input_day in [0,6] else 0
+        X_pred['hour_sin'] = np.sin(2 * np.pi * input_hour / 24)
+        X_pred['hour_cos'] = np.cos(2 * np.pi * input_hour / 24)
+        X_pred['day_sin'] = np.sin(2 * np.pi * input_day / 7)
+        X_pred['day_cos'] = np.cos(2 * np.pi * input_day / 7)
+
+        X_pred = X_pred.merge(station_stats, on="start_station_name", how="left")
+
+        avg_global = station_stats["station_avg_demand"].mean()
+        X_pred["station_avg_demand"] = X_pred["station_avg_demand"].fillna(avg_global)
+
+        prev_hour_1 = (input_hour - 1) % 24
+        stats_lag1 = hourly_stats[hourly_stats["hour_of_day"] == prev_hour_1][["start_station_name", "avg_hourly_trips"]]
+        stats_lag1 = stats_lag1.rename(columns={"avg_hourly_trips": "trip_count_lag1"})
+
+        X_pred = X_pred.merge(stats_lag1, on="start_station_name", how="left")
+        X_pred["trip_count_lag1"] = X_pred["trip_count_lag1"].fillna(0)
+
+        hours_rolling = [(input_hour - i) % 24 for i in [1, 2, 3]]
+        stats_rolling = hourly_stats[hourly_stats["hour_of_day"].isin(hours_rolling)]
+
+        rolling_values = (
+            stats_rolling.groupby("start_station_name")["avg_hourly_trips"]
+            .mean()
+            .reset_index()
+            .rename(columns={"avg_hourly_trips": "trip_count_rolling3"})
+        )
+
+        X_pred = X_pred.merge(rolling_values, on="start_station_name", how="left")
+        X_pred["trip_count_rolling3"] = X_pred["trip_count_rolling3"].fillna(0)
 
         try:
             X_pred = X_pred[required_features]
