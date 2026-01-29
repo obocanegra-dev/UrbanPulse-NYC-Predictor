@@ -47,6 +47,9 @@ def train_model():
     station_popularity = train_df.groupby("start_station_name")["trip_count"].mean().reset_index()
     station_popularity.columns = ["start_station_name", "station_avg_demand"]
 
+    hourly_stats = df.groupby(["start_station_name", "hour_of_day"])["trip_count"].mean().reset_index()
+    hourly_stats.columns = ["start_station_name", "hour_of_day", "avg_hourly_trips"]
+
     train_df = train_df.merge(station_popularity, on="start_station_name", how="left")
     test_df = test_df.merge(station_popularity, on="start_station_name", how="left")
 
@@ -65,7 +68,9 @@ def train_model():
         "is_raining",
         "station_avg_demand",
         "start_lat",
-        "start_lng", "trip_count_lag1", "trip_count_rolling3"
+        "start_lng",
+        "trip_count_lag1",
+        "trip_count_rolling3"
     ]
     target = "trip_count"
 
@@ -100,7 +105,8 @@ def train_model():
     artifact = {
         "model": model,
         "features": features,
-        "station_stats": station_popularity
+        "station_stats": station_popularity,
+        "hourly_stats": hourly_stats
     }
 
     print(f"Saving model bundle to {MODEL_FILE}")
