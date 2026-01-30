@@ -122,7 +122,7 @@ with tab2:
             "ColumnLayer",
             map_data,
             get_position=["start_lng", "start_lat"],
-            elevation_scale=1,
+            elevation_scale=0.1,
             radius=50,
             get_fill_color=[255, 165, 0, 100],
             extruded=True,
@@ -237,6 +237,7 @@ with tab3:
 
     preds = model.predict(X_pred)
     stations["predicted_demand"] = preds.clip(min=0)
+    stations["radius_norm"] = (np.sqrt(stations["predicted_demand"]) * 10)
 
     def get_color(val):
         if val > 15:
@@ -259,7 +260,7 @@ with tab3:
             "ScatterplotLayer",
             stations,
             get_position=["start_lng", "start_lat"],
-            get_radius="predicted_demand * 10",
+            get_radius="radius_norm",
             get_fill_color="color",
             pickable=True,
         )
