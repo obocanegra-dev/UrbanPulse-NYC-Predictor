@@ -8,29 +8,27 @@ import os
 from datetime import datetime
 import duckdb
 
-st.set_page_config(
-    page_title="UrbanPulse - NYC Bike Demand",
-    layout="wide"
-)
+st.set_page_config(page_title="UrbanPulse - NYC Bike Demand", layout="wide")
 
 DATA_PATH = "data/processed/daily_demand.parquet"
 MODEL_PATH = "model.pkl"
 
 
+# ----------------------------
+# Loaders
+# ----------------------------
+
 @st.cache_data
 def load_data():
     if not os.path.exists(DATA_PATH):
         return None
-    con = duckdb.connect()
-    df = con.execute(f"SELECT * FROM '{DATA_PATH}'").df()
-    con.close()
-    return df
+    with duckdb.connect() as con:
+        return con.execute(f"SELECT * FROM '{DATA_PATH}'").df()
 
 
 @st.cache_resource
 def load_model_bundle():
-    if not os.path.exists(MODEL_PATH): return None
-    return joblib.load(MODEL_PATH)
+    return joblib.load(MODEL_PATH) if os.path.exists(MODEL_PATH) else None
 
 
 @st.cache_data
@@ -38,29 +36,39 @@ def get_unique_stations(df):
     return df[["start_station_name", "start_lat", "start_lng"]].drop_duplicates()
 
 
+# ----------------------------
+# Feature helpers
+# ----------------------------
+
 @st.cache_data
 def prepare_hourly_features(hourly_stats):
-    lag1_map = {}
-    rolling3_map = {}
+    lag1_map, rolling3_map = {}, {}
 
     for h in range(24):
         prev = (h - 1) % 24
-        lag1 = (
+
+        lag1_map[h] = (
             hourly_stats[hourly_stats["hour_of_day"] == prev]
             .set_index("start_station_name")["avg_hourly_trips"]
         )
-        lag1_map[h] = lag1
 
-        hours = [(h - i) % 24 for i in [1, 2, 3]]
-        rolling = (
+        hours = [(h - i) % 24 for i in (1, 2, 3)]
+        rolling3_map[h] = (
             hourly_stats[hourly_stats["hour_of_day"].isin(hours)]
             .groupby("start_station_name")["avg_hourly_trips"]
             .mean()
         )
-        rolling3_map[h] = rolling
 
     return lag1_map, rolling3_map
 
+
+def cyclical(val, period):
+    return np.sin(2 * np.pi * val / period), np.cos(2 * np.pi * val / period)
+
+
+# ----------------------------
+# App
+# ----------------------------
 
 st.title("UrbanPulse - NYC Bike Demand Predictor")
 st.markdown("Bike demand forecasting for Citi Bike NYC.")
@@ -75,31 +83,38 @@ if df is None:
 tab1, tab2, tab3 = st.tabs(["Pipeline", "EDA", "Prediction"])
 
 
+# ----------------------------
+# TAB 1 – Pipeline
+# ----------------------------
+
 with tab1:
     st.header("Pipeline Status")
 
-    col1, col2, col3 = st.columns(3)
     stats = os.stat(DATA_PATH)
+    c1, c2, c3 = st.columns(3)
 
-    col1.metric("File size (MB)", f"{stats.st_size / (1024 * 1024):.2f}")
-    col2.metric("Rows", f"{len(df):,}")
-    col3.metric(
+    c1.metric("File size (MB)", f"{stats.st_size / (1024 * 1024):.2f}")
+    c2.metric("Rows", f"{len(df):,}")
+    c3.metric(
         "Last update",
-        datetime.fromtimestamp(stats.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+        datetime.fromtimestamp(stats.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
     )
 
-    st.dataframe(df.head(10), width='stretch')
+    st.dataframe(df.head(10), width="stretch")
 
+
+# ----------------------------
+# TAB 2 – EDA
+# ----------------------------
 
 with tab2:
     st.header("Exploratory Analysis")
-
     col_map, col_stats = st.columns([3, 2])
 
     with col_map:
         map_data = (
-            df.groupby(["start_lat", "start_lng"])
-            .agg({"trip_count": "sum"})
+            df.groupby(["start_lat", "start_lng"])["trip_count"]
+            .sum()
             .reset_index()
         )
 
@@ -116,17 +131,14 @@ with tab2:
         )
 
         view_state = pdk.ViewState(
-            latitude=40.74,
-            longitude=-73.99,
-            zoom=10.5,
-            pitch=60
+            latitude=40.74, longitude=-73.99, zoom=10.5, pitch=60
         )
 
         st.pydeck_chart(
             pdk.Deck(
                 layers=[layer],
                 initial_view_state=view_state,
-                tooltip={"html": "<b>Trips:</b> {trip_count}"}
+                tooltip={"html": "<b>Trips:</b> {trip_count}"},
             )
         )
 
@@ -139,161 +151,143 @@ with tab2:
             .sort_values()
             .reset_index()
         )
+
         chart = (
             alt.Chart(top_stations)
             .mark_bar()
             .encode(
                 x=alt.X("trip_count:Q", title="Trips"),
-                y=alt.Y(
-                    "start_station_name:N",
-                    sort="-x",
-                    title="Station"
-                )
+                y=alt.Y("start_station_name:N", sort="-x", title="Station"),
             )
         )
-        st.altair_chart(chart, width='stretch')
 
+        st.altair_chart(chart, width="stretch")
         st.divider()
 
         st.subheader("Demand by Hour")
-        hourly_counts = df.groupby("hour_of_day")["trip_count"].sum()
-        hourly_counts.index.name = "Hour of Day"
-        hourly_counts.name = "Total Trips"
-        st.bar_chart(hourly_counts)
+        hourly = df.groupby("hour_of_day")["trip_count"].sum()
+        hourly.index.name = "Hour of Day"
+        hourly.name = "Total Trips"
+        st.bar_chart(hourly)
 
+
+# ----------------------------
+# TAB 3 – Prediction
+# ----------------------------
 
 with tab3:
     st.header("Demand Prediction")
 
     if bundle is None:
         st.warning("Model not found. Train it first.")
-    else:
-        model = bundle["model"]
-        required_features = bundle["features"]
-        station_stats = bundle["station_stats"]
-        hourly_stats = bundle["hourly_stats"]
+        st.stop()
 
-        col1, col2, col3, col4 = st.columns(4)
-        with col1: input_hour = st.slider("Hour", 0, 23, 17)
-        with col2: input_temp = st.slider("Temperature (°C)", -10, 40, 25)
-        with col3:
-            input_rain = st.radio("Raining?", ["No", "Yes"])
-            is_raining_val = 1 if input_rain == "Yes" else 0
-        with col4:
-            input_day = st.selectbox(
-                "Day",
-                options=[0,1,2,3,4,5,6],
-                format_func=lambda x: ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][x],
-                index=3
-            )
+    model = bundle["model"]
+    required_features = bundle["features"]
+    station_stats = bundle["station_stats"]
+    hourly_stats = bundle["hourly_stats"]
 
-        stations = get_unique_stations(df)
-        lag1_map, rolling3_map = prepare_hourly_features(hourly_stats)
-        X_pred = stations.copy()
-
-        X_pred = stations.copy()
-        X_pred["hour_of_day"] = input_hour
-        X_pred["day_of_week"] = input_day
-        X_pred["temperature"] = input_temp
-        X_pred["is_raining"] = is_raining_val
-        X_pred["is_weekend"] = 1 if input_day in [0,6] else 0
-        X_pred['hour_sin'] = np.sin(2 * np.pi * input_hour / 24)
-        X_pred['hour_cos'] = np.cos(2 * np.pi * input_hour / 24)
-        X_pred['day_sin'] = np.sin(2 * np.pi * input_day / 7)
-        X_pred['day_cos'] = np.cos(2 * np.pi * input_day / 7)
-
-        avg_global = station_stats["station_avg_demand"].mean()
-        station_avg_map = (
-            station_stats
-            .set_index("start_station_name")["station_avg_demand"]
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        input_hour = st.slider("Hour", 0, 23, 17)
+    with c2:
+        input_temp = st.slider("Temperature (°C)", -10, 40, 25)
+    with c3:
+        is_raining_val = 1 if st.radio("Raining?", ["No", "Yes"]) == "Yes" else 0
+    with c4:
+        input_day = st.selectbox(
+            "Day",
+            options=list(range(7)),
+            format_func=lambda x: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][x],
+            index=3,
         )
 
-        X_pred["station_avg_demand"] = (
-            X_pred["start_station_name"]
-            .map(station_avg_map)
-            .fillna(avg_global)
+    stations = get_unique_stations(df)
+    lag1_map, rolling3_map = prepare_hourly_features(hourly_stats)
+
+    X_pred = stations.copy()
+    X_pred["hour_of_day"] = input_hour
+    X_pred["day_of_week"] = input_day
+    X_pred["temperature"] = input_temp
+    X_pred["is_raining"] = is_raining_val
+    X_pred["is_weekend"] = int(input_day in [0, 6])
+
+    X_pred["hour_sin"], X_pred["hour_cos"] = cyclical(input_hour, 24)
+    X_pred["day_sin"], X_pred["day_cos"] = cyclical(input_day, 7)
+
+    avg_global = station_stats["station_avg_demand"].mean()
+    station_avg = station_stats.set_index("start_station_name")["station_avg_demand"]
+
+    X_pred["station_avg_demand"] = (
+        X_pred["start_station_name"].map(station_avg).fillna(avg_global)
+    )
+
+    X_pred["trip_count_lag1"] = (
+        X_pred["start_station_name"].map(lag1_map[input_hour]).fillna(0)
+    )
+    X_pred["trip_count_rolling3"] = (
+        X_pred["start_station_name"].map(rolling3_map[input_hour]).fillna(0)
+    )
+
+    try:
+        X_pred = X_pred[required_features]
+    except KeyError as e:
+        st.error(f"Missing features for model: {e}")
+        st.stop()
+
+    preds = model.predict(X_pred)
+    stations["predicted_demand"] = preds.clip(min=0)
+
+    def get_color(val):
+        if val > 15:
+            return [255, 0, 0, 180]
+        elif val > 5:
+            return [255, 165, 0, 160]
+        return [0, 128, 255, 140]
+
+    stations["color"] = stations["predicted_demand"].apply(get_color)
+
+    hotspots = (
+        stations.sort_values("predicted_demand", ascending=False)
+        .head(10)[["start_station_name", "predicted_demand"]]
+    )
+
+    col_map, col_table = st.columns([3, 1])
+
+    with col_map:
+        layer = pdk.Layer(
+            "ScatterplotLayer",
+            stations,
+            get_position=["start_lng", "start_lat"],
+            get_radius="predicted_demand * 10",
+            get_fill_color="color",
+            pickable=True,
         )
 
-        X_pred["station_avg_demand"] = X_pred["station_avg_demand"].fillna(avg_global)
-
-        X_pred["trip_count_lag1"] = (
-            X_pred["start_station_name"]
-            .map(lag1_map[input_hour])
-            .fillna(0)
+        view_state = pdk.ViewState(
+            latitude=40.74, longitude=-73.99, zoom=11.5
         )
 
-        X_pred["trip_count_rolling3"] = (
-            X_pred["start_station_name"]
-            .map(rolling3_map[input_hour])
-            .fillna(0)
+        st.pydeck_chart(
+            pdk.Deck(
+                layers=[layer],
+                initial_view_state=view_state,
+                tooltip={
+                    "html": "<b>{start_station_name}</b><br/>Demand: {predicted_demand}"
+                },
+            )
         )
 
-        try:
-            X_pred = X_pred[required_features]
-        except KeyError as e:
-            st.error(f"Error: The model expects features that are missing: {e}")
-            st.stop()
-
-        preds = model.predict(X_pred)
-        stations["predicted_demand"] = preds.clip(min=0)
-
-        def get_color(val):
-            if val > 15:
-                return [255, 0, 0, 180]
-            elif val > 5:
-                return [255, 165, 0, 160]
-            else:
-                return [0, 128, 255, 140]
-
-        stations["color"] = stations["predicted_demand"].apply(get_color)
-
-        hotspots = (
-            stations.sort_values("predicted_demand", ascending=False)
-            .head(10)
-            [["start_station_name", "predicted_demand"]]
+    with col_table:
+        st.subheader("Top Predicted")
+        st.dataframe(
+            hotspots,
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "start_station_name": st.column_config.TextColumn("Station"),
+                "predicted_demand": st.column_config.NumberColumn(
+                    "Predicted Demand", format="%.1f"
+                ),
+            },
         )
-
-        col_map, col_table = st.columns([3, 1])
-
-        with col_map:
-            layer = pdk.Layer(
-                "ScatterplotLayer",
-                stations,
-                get_position=["start_lng", "start_lat"],
-                get_radius="predicted_demand * 10",
-                get_fill_color="color",
-                pickable=True
-            )
-
-            view_state = pdk.ViewState(
-                latitude=40.74,
-                longitude=-73.99,
-                zoom=11.5
-            )
-
-            st.pydeck_chart(
-                pdk.Deck(
-                    layers=[layer],
-                    initial_view_state=view_state,
-                    tooltip={
-                        "html": "<b>{start_station_name}</b><br/>Demand: {predicted_demand}"
-                    }
-                )
-            )
-
-        with col_table:
-            st.subheader("Top Predicted")
-            st.dataframe(
-                hotspots,
-                hide_index=True,
-                width='stretch',
-                column_config={
-                    "start_station_name": st.column_config.TextColumn(
-                        "Station"
-                    ),
-                    "predicted_demand": st.column_config.NumberColumn(
-                        "Predicted Demand",
-                        format="%.1f"
-                    )
-                }
-            )
