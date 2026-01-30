@@ -33,8 +33,33 @@ def load_model_bundle():
     return joblib.load(MODEL_PATH)
 
 
+@st.cache_data
 def get_unique_stations(df):
     return df[["start_station_name", "start_lat", "start_lng"]].drop_duplicates()
+
+
+@st.cache_data
+def prepare_hourly_features(hourly_stats):
+    lag1_map = {}
+    rolling3_map = {}
+
+    for h in range(24):
+        prev = (h - 1) % 24
+        lag1 = (
+            hourly_stats[hourly_stats["hour_of_day"] == prev]
+            .set_index("start_station_name")["avg_hourly_trips"]
+        )
+        lag1_map[h] = lag1
+
+        hours = [(h - i) % 24 for i in [1, 2, 3]]
+        rolling = (
+            hourly_stats[hourly_stats["hour_of_day"].isin(hours)]
+            .groupby("start_station_name")["avg_hourly_trips"]
+            .mean()
+        )
+        rolling3_map[h] = rolling
+
+    return lag1_map, rolling3_map
 
 
 st.title("UrbanPulse - NYC Bike Demand Predictor")
@@ -163,6 +188,7 @@ with tab3:
             )
 
         stations = get_unique_stations(df)
+        lag1_map, rolling3_map = prepare_hourly_features(hourly_stats)
         X_pred = stations.copy()
 
         X_pred = stations.copy()
@@ -181,25 +207,17 @@ with tab3:
         avg_global = station_stats["station_avg_demand"].mean()
         X_pred["station_avg_demand"] = X_pred["station_avg_demand"].fillna(avg_global)
 
-        prev_hour_1 = (input_hour - 1) % 24
-        stats_lag1 = hourly_stats[hourly_stats["hour_of_day"] == prev_hour_1][["start_station_name", "avg_hourly_trips"]]
-        stats_lag1 = stats_lag1.rename(columns={"avg_hourly_trips": "trip_count_lag1"})
-
-        X_pred = X_pred.merge(stats_lag1, on="start_station_name", how="left")
-        X_pred["trip_count_lag1"] = X_pred["trip_count_lag1"].fillna(0)
-
-        hours_rolling = [(input_hour - i) % 24 for i in [1, 2, 3]]
-        stats_rolling = hourly_stats[hourly_stats["hour_of_day"].isin(hours_rolling)]
-
-        rolling_values = (
-            stats_rolling.groupby("start_station_name")["avg_hourly_trips"]
-            .mean()
-            .reset_index()
-            .rename(columns={"avg_hourly_trips": "trip_count_rolling3"})
+        X_pred["trip_count_lag1"] = (
+            X_pred["start_station_name"]
+            .map(lag1_map[input_hour])
+            .fillna(0)
         )
 
-        X_pred = X_pred.merge(rolling_values, on="start_station_name", how="left")
-        X_pred["trip_count_rolling3"] = X_pred["trip_count_rolling3"].fillna(0)
+        X_pred["trip_count_rolling3"] = (
+            X_pred["start_station_name"]
+            .map(rolling3_map[input_hour])
+            .fillna(0)
+        )
 
         try:
             X_pred = X_pred[required_features]
