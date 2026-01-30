@@ -70,7 +70,7 @@ def train_model():
         "start_lat",
         "start_lng",
         "trip_count_lag1",
-        "trip_count_rolling3"
+        "trip_count_rolling3",
     ]
     target = "trip_count"
 
@@ -81,12 +81,18 @@ def train_model():
 
     print("Training XGBoost...")
     model = xgb.XGBRegressor(
-        n_estimators=200,
-        max_depth=6,
-        learning_rate=0.006,
-        n_jobs=-1,
+        n_estimators=294,
+        max_depth=8,
+        learning_rate=0.075,
+        subsample=0.95,
+        colsample_bytree=0.81,
+        reg_alpha=3.05,
+        reg_lambda=2.24,
+        min_child_weight=6,
+        gamma=1.8,
+        objective="reg:squarederror",
         random_state=42,
-        objective='reg:squarederror'
+        n_jobs=-1
     )
     model.fit(X_train, y_train)
 
