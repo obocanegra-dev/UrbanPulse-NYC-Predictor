@@ -19,11 +19,46 @@ MODEL_PATH = "model.pkl"
 # ----------------------------
 
 @st.cache_data
-def load_data():
-    if not os.path.exists(DATA_PATH):
-        return None
+def get_pipeline_stats():
     with duckdb.connect() as con:
-        return con.execute(f"SELECT * FROM '{DATA_PATH}'").df()
+        count = con.execute(f"SELECT COUNT(*) FROM '{DATA_PATH}'").fetchone()[0]
+        sample = con.execute(f"SELECT * FROM '{DATA_PATH}' LIMIT 100").df()
+    return count, sample
+
+
+@st.cache_data
+def get_aggregated_map_data():
+    with duckdb.connect() as con:
+        query = f"""
+            SELECT start_lat, start_lng, start_station_name, SUM(trip_count) as total_trips
+            FROM '{DATA_PATH}'
+            GROUP BY 1, 2, 3
+        """
+        return con.execute(query).df()
+
+
+@st.cache_data
+def get_top_stations():
+    with duckdb.connect() as con:
+        query = f"""
+            SELECT start_station_name, SUM(trip_count) as total_trips
+            FROM '{DATA_PATH}'
+            GROUP BY start_station_name
+            ORDER BY total_trips DESC
+            LIMIT 10
+        """
+        return con.execute(query).df()
+
+@st.cache_data
+def get_hourly_demand():
+    with duckdb.connect() as con:
+        query = f"""
+            SELECT hour_of_day AS 'Hour of Day', SUM(trip_count) as 'Total Trips'
+            FROM '{DATA_PATH}'
+            GROUP BY hour_of_day
+            ORDER BY hour_of_day
+        """
+        return con.execute(query).df()
 
 
 @st.cache_resource
@@ -32,8 +67,13 @@ def load_model_bundle():
 
 
 @st.cache_data
-def get_unique_stations(df):
-    return df[["start_station_name", "start_lat", "start_lng"]].drop_duplicates()
+def get_unique_stations():
+    with duckdb.connect() as con:
+        query = f"""
+            SELECT DISTINCT start_station_name, start_lat, start_lng
+            FROM '{DATA_PATH}'
+        """
+        return con.execute(query).df()
 
 
 # ----------------------------
@@ -73,12 +113,7 @@ def cyclical(val, period):
 st.title("UrbanPulse - NYC Bike Demand Predictor")
 st.markdown("Bike demand forecasting for Citi Bike NYC.")
 
-df = load_data()
 bundle = load_model_bundle()
-
-if df is None:
-    st.error("Processed data not found. Run ETL first.")
-    st.stop()
 
 tab1, tab2, tab3 = st.tabs(["Pipeline", "EDA", "Prediction"])
 
@@ -90,17 +125,16 @@ tab1, tab2, tab3 = st.tabs(["Pipeline", "EDA", "Prediction"])
 with tab1:
     st.header("Pipeline Status")
 
+    total_rows, sample_df = get_pipeline_stats()
     stats = os.stat(DATA_PATH)
+
     c1, c2, c3 = st.columns(3)
-
     c1.metric("File size (MB)", f"{stats.st_size / (1024 * 1024):.2f}")
-    c2.metric("Rows", f"{len(df):,}")
-    c3.metric(
-        "Last update",
-        datetime.fromtimestamp(stats.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
-    )
+    c2.metric("Rows", f"{total_rows:,}")
+    c3.metric("Last update", datetime.fromtimestamp(stats.st_mtime).strftime("%Y-%m-%d %H:%M:%S"))
 
-    st.dataframe(df.head(10), width="stretch")
+    st.subheader("Data Preview (First 10 rows)")
+    st.dataframe(sample_df.head(10), width='stretch')
 
 
 # ----------------------------
@@ -109,25 +143,25 @@ with tab1:
 
 with tab2:
     st.header("Exploratory Analysis")
+
+    map_data = get_aggregated_map_data()
+
     col_map, col_stats = st.columns([3, 2])
 
     with col_map:
-        map_data = (
-            df.groupby(["start_lat", "start_lng"])["trip_count"]
-            .sum()
-            .reset_index()
-        )
+        max_trips = map_data["total_trips"].max()
+        map_data["norm_height"] = (map_data["total_trips"] / max_trips) * 2000
 
         layer = pdk.Layer(
             "ColumnLayer",
             map_data,
             get_position=["start_lng", "start_lat"],
-            elevation_scale=0.1,
+            elevation_scale=1,
             radius=50,
             get_fill_color=[255, 165, 0, 100],
             extruded=True,
             pickable=True,
-            get_elevation="trip_count",
+            get_elevation="norm_height",
         )
 
         view_state = pdk.ViewState(
@@ -138,37 +172,28 @@ with tab2:
             pdk.Deck(
                 layers=[layer],
                 initial_view_state=view_state,
-                tooltip={"html": "<b>Trips:</b> {trip_count}"},
+                tooltip={"html": "<b>Station:</b> {start_station_name}<br/><b>Trips:</b> {total_trips}"},
             )
         )
 
     with col_stats:
         st.subheader("Top 10 Stations")
-        top_stations = (
-            df.groupby("start_station_name")["trip_count"]
-            .sum()
-            .nlargest(10)
-            .sort_values()
-            .reset_index()
-        )
+        top_stations = get_top_stations()
 
         chart = (
             alt.Chart(top_stations)
             .mark_bar()
             .encode(
-                x=alt.X("trip_count:Q", title="Trips"),
+                x=alt.X("total_trips:Q", title="Trips"),
                 y=alt.Y("start_station_name:N", sort="-x", title="Station"),
             )
         )
-
-        st.altair_chart(chart, width="stretch")
+        st.altair_chart(chart, width='stretch')
         st.divider()
 
         st.subheader("Demand by Hour")
-        hourly = df.groupby("hour_of_day")["trip_count"].sum()
-        hourly.index.name = "Hour of Day"
-        hourly.name = "Total Trips"
-        st.bar_chart(hourly)
+        hourly_data = get_hourly_demand()
+        st.bar_chart(hourly_data.set_index("Hour of Day"))
 
 
 # ----------------------------
@@ -202,7 +227,7 @@ with tab3:
             index=3,
         )
 
-    stations = get_unique_stations(df)
+    stations = get_unique_stations()
     lag1_map, rolling3_map = prepare_hourly_features(hourly_stats)
 
     X_pred = stations.copy()
