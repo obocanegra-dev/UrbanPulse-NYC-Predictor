@@ -202,9 +202,18 @@ with tab3:
         X_pred['day_sin'] = np.sin(2 * np.pi * input_day / 7)
         X_pred['day_cos'] = np.cos(2 * np.pi * input_day / 7)
 
-        X_pred = X_pred.merge(station_stats, on="start_station_name", how="left")
-
         avg_global = station_stats["station_avg_demand"].mean()
+        station_avg_map = (
+            station_stats
+            .set_index("start_station_name")["station_avg_demand"]
+        )
+
+        X_pred["station_avg_demand"] = (
+            X_pred["start_station_name"]
+            .map(station_avg_map)
+            .fillna(avg_global)
+        )
+
         X_pred["station_avg_demand"] = X_pred["station_avg_demand"].fillna(avg_global)
 
         X_pred["trip_count_lag1"] = (
