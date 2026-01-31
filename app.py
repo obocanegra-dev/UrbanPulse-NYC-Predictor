@@ -271,7 +271,14 @@ with tab2:
         get_position=["start_lng", "start_lat"],
         elevation_scale=1,
         radius=50,
-        get_fill_color=[255, 165, 0, 100],
+        get_fill_color="""
+            [
+                255,
+                165 - (norm_height / 5000) * 165,
+                0,
+                120
+            ]
+        """,
         extruded=True,
         pickable=True,
         get_elevation="norm_height",
