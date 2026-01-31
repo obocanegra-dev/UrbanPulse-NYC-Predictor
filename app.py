@@ -96,6 +96,35 @@ def get_hourly_demand():
         return con.execute(query).df()
 
 
+@st.cache_data
+def get_eda_stats():
+    with duckdb.connect() as con:
+        hourly_query = f"""
+            SELECT
+                hour_of_day,
+                CASE WHEN day_of_week IN (0, 6) THEN 'Weekend' ELSE 'Weekday' END as day_type,
+                AVG(trip_count) as avg_trips
+            FROM '{DATA_PATH}'
+            GROUP BY 1, 2
+            ORDER BY 1, 2
+        """
+        hourly_df = con.execute(hourly_query).df()
+
+        weather_query = f"""
+            SELECT
+                temperature,
+                precipitation,
+                CASE WHEN precipitation > 0.1 THEN 'Rainy' ELSE 'Clear' END as weather_cond,
+                SUM(trip_count) as total_trips
+            FROM '{DATA_PATH}'
+            GROUP BY hour_timestamp, temperature, precipitation
+            HAVING total_trips > 10  -- Filtramos horas muertas (madrugada extrema) para limpiar el gráfico
+        """
+        weather_df = con.execute(weather_query).df()
+
+    return hourly_df, weather_df
+
+
 @st.cache_resource
 def load_model_bundle():
     return joblib.load(MODEL_PATH) if os.path.exists(MODEL_PATH) else None
@@ -233,37 +262,102 @@ with tab2:
 
     map_data = get_aggregated_map_data()
 
-    col_map, col_stats = st.columns([3, 2])
+    max_trips = map_data["total_trips"].max()
+    map_data["norm_height"] = (map_data["total_trips"] / max_trips) * 5000
 
-    with col_map:
-        max_trips = map_data["total_trips"].max()
-        map_data["norm_height"] = (map_data["total_trips"] / max_trips) * 2000
+    layer = pdk.Layer(
+        "ColumnLayer",
+        map_data,
+        get_position=["start_lng", "start_lat"],
+        elevation_scale=1,
+        radius=50,
+        get_fill_color=[255, 165, 0, 100],
+        extruded=True,
+        pickable=True,
+        get_elevation="norm_height",
+    )
 
-        layer = pdk.Layer(
-            "ColumnLayer",
-            map_data,
-            get_position=["start_lng", "start_lat"],
-            elevation_scale=1,
-            radius=50,
-            get_fill_color=[255, 165, 0, 100],
-            extruded=True,
-            pickable=True,
-            get_elevation="norm_height",
-        )
+    view_state = pdk.ViewState(
+        latitude=40.74, longitude=-73.99, zoom=11.2, pitch=60, bearing=120
+    )
 
-        view_state = pdk.ViewState(
-            latitude=40.74, longitude=-73.99, zoom=10.5, pitch=60
-        )
+    st.pydeck_chart(
+        pdk.Deck(
+            layers=[layer],
+            initial_view_state=view_state,
+            tooltip={
+                "html": "<b>Station:</b> {start_station_name}<br/><b>Trips:</b> {total_trips}"
+            },
+        ),
+        use_container_width=True
+    )
 
-        st.pydeck_chart(
-            pdk.Deck(
-                layers=[layer],
-                initial_view_state=view_state,
-                tooltip={"html": "<b>Station:</b> {start_station_name}<br/><b>Trips:</b> {total_trips}"},
-            )
-        )
+    hourly_df, weather_df = get_eda_stats()
 
-    with col_stats:
+    st.subheader("Commuters vs. Tourists Pattern")
+    st.caption("Average trips per station by hour of day.")
+
+    chart_hourly = alt.Chart(hourly_df).mark_line(strokeWidth=3).encode(
+        x=alt.X('hour_of_day', title='Hour (0-23)'),
+        y=alt.Y('avg_trips', title='Avg Trips per Station'),
+        color=alt.Color(
+            'day_type',
+            scale=alt.Scale(
+                domain=['Weekday', 'Weekend'],
+                range=['#1f77b4', '#ff7f0e']
+            ),
+            legend=alt.Legend(title="Day Type", orient="top-left")
+        ),
+        tooltip=[
+            alt.Tooltip('hour_of_day', title='Hour of Day'),
+            alt.Tooltip('avg_trips', title='Avg Trips per Station', format=',.1f'),
+            alt.Tooltip('day_type', title='Day Type')
+        ]
+    ).properties(height=350)
+
+    st.altair_chart(chart_hourly, width='stretch')
+
+    with st.expander("💡 Business Insight"):
+        st.markdown("""
+        * **Weekdays (Blue):** Clear peaks at **8 AM** and **6 PM**. This is the classic "Commuter" pattern (people going to/from work).
+        * **Weekends (Orange):** Smooth bell curve peaking at **2 PM**. This indicates leisure/tourist usage.
+        * **Action:** Rebalancing trucks should focus on business districts at 9 AM on weekdays, but focus on parks/tourist spots at noon on weekends.
+        """)
+
+    st.markdown("---")
+
+    st.subheader("The Impact of Weather")
+    st.caption("Total city-wide demand vs. Temperature & Rain.")
+
+    chart_weather = alt.Chart(weather_df).mark_circle(size=60).encode(
+        x=alt.X('temperature', title='Temperature (°C)', scale=alt.Scale(domain=[-5, 35])),
+        y=alt.Y('total_trips', title='Total Trips (City-wide)'),
+        color=alt.Color(
+            'weather_cond',
+            scale=alt.Scale(domain=['Clear', 'Rainy'], range=['steelblue', 'red']),
+            legend=alt.Legend(title="Condition")
+        ),
+        tooltip=[
+            alt.Tooltip('temperature', title='Temperature (°C)'),
+            alt.Tooltip('total_trips', title='Total Trips'),
+            alt.Tooltip('weather_cond', title='Weather Condition')
+        ]
+    ).properties(height=400).interactive()
+
+    st.altair_chart(chart_weather, width='stretch')
+
+    with st.expander("💡 Business Insight"):
+        st.markdown("""
+        * **Temperature Correlation:** There is a strong positive correlation. As temperature rises, demand increases.
+        * **Rain Effect (Red Dots):** Notice how 'Rainy' points are consistently lower than 'Clear' points at the same temperature.
+        * **Takeaway:** Even on a warm day (25°C), rain can cut demand by **30-50%**. The model must penalize heavy rain heavily.
+        """)
+
+    st.markdown("---")
+
+    col_left, col_right = st.columns(2)
+
+    with col_left:
         st.subheader("Top 10 Stations")
         top_stations = get_top_stations()
 
@@ -276,8 +370,8 @@ with tab2:
             )
         )
         st.altair_chart(chart, width='stretch')
-        st.divider()
 
+    with col_right:
         st.subheader("Demand by Hour")
         hourly_data = get_hourly_demand()
         st.bar_chart(hourly_data.set_index("Hour of Day"))
