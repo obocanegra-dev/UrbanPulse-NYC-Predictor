@@ -21,9 +21,44 @@ MODEL_PATH = "model.pkl"
 @st.cache_data
 def get_pipeline_stats():
     with duckdb.connect() as con:
-        count = con.execute(f"SELECT COUNT(*) FROM '{DATA_PATH}'").fetchone()[0]
-        sample = con.execute(f"SELECT * FROM '{DATA_PATH}' LIMIT 100").df()
-    return count, sample
+        stats_query = f"""
+        WITH max_ts AS (
+            SELECT MAX(hour_timestamp) AS max_hour
+            FROM '{DATA_PATH}'
+        )
+        SELECT
+            COUNT(*) AS total_rows,
+            ANY_VALUE(max_hour) AS last_update,
+            COUNT(*) FILTER (
+                WHERE hour_timestamp >= max_hour - INTERVAL 30 DAY
+            ) AS recent_volume
+        FROM '{DATA_PATH}', max_ts
+        """
+
+
+        stats = con.execute(stats_query).fetchone()
+        total_rows, last_update, recent_volume = stats
+
+        null_check_query = f"""
+            SELECT COUNT(*)
+            FROM '{DATA_PATH}'
+            WHERE trip_count IS NULL
+               OR start_station_name IS NULL
+               OR temperature IS NULL
+        """
+        null_count = con.execute(null_check_query).fetchone()[0]
+
+        schema_df = con.execute(f"DESCRIBE SELECT * FROM '{DATA_PATH}'").df()
+        sample_df = con.execute(f"SELECT * FROM '{DATA_PATH}' LIMIT 50").df()
+
+    return {
+        "total_rows": total_rows,
+        "last_update": last_update,
+        "recent_volume": recent_volume,
+        "null_count": null_count,
+        "schema": schema_df,
+        "sample": sample_df
+    }
 
 
 @st.cache_data
@@ -123,18 +158,70 @@ tab1, tab2, tab3 = st.tabs(["Pipeline", "EDA", "Prediction"])
 # ----------------------------
 
 with tab1:
-    st.header("Pipeline Status")
+    st.header("Pipeline Health & Status")
 
-    total_rows, sample_df = get_pipeline_stats()
-    stats = os.stat(DATA_PATH)
+    stats = get_pipeline_stats()
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("File size (MB)", f"{stats.st_size / (1024 * 1024):.2f}")
-    c2.metric("Rows", f"{total_rows:,}")
-    c3.metric("Last update", datetime.fromtimestamp(stats.st_mtime).strftime("%Y-%m-%d %H:%M:%S"))
+    col1, col2, col3, col4 = st.columns(4)
 
-    st.subheader("Data Preview (First 10 rows)")
-    st.dataframe(sample_df.head(10), width='stretch')
+    with col1:
+        st.metric(
+            label="Total Rows processed",
+            value=f"{stats['total_rows']:,}",
+            delta=f"+{stats['recent_volume']:,} (last 30 days)"
+        )
+
+    with col2:
+        last_date = stats['last_update']
+        days_lag = (datetime.now() - last_date).days
+
+        st.metric(
+            label="Data Freshness",
+            value=last_date.strftime('%Y-%m-%d'),
+            delta=f"{days_lag} days ago",
+            delta_color="inverse"
+        )
+
+    with col3:
+        nulls = stats['null_count']
+        st.metric(
+            label="Failed Records (Nulls)",
+            value=nulls,
+            delta="Perfect Quality" if nulls == 0 else "Data Quality Issue",
+            delta_color="normal" if nulls == 0 else "inverse"
+        )
+
+    with col4:
+        file_size = os.path.getsize(DATA_PATH) / (1024 * 1024)
+        st.metric(
+            label="Storage Usage (Parquet)",
+            value=f"{file_size:.2f} MB",
+            delta="Optimized"
+        )
+
+    st.markdown("---")
+
+    col_schema, col_sample = st.columns([1, 2])
+
+    with col_schema:
+        st.subheader("Data Schema")
+        st.caption("DuckDB auto-inferred types")
+        st.dataframe(
+            stats['schema'][['column_name', 'column_type']],
+            width='stretch',
+            hide_index=True,
+            height=400
+        )
+
+    with col_sample:
+        st.subheader("Latest Data Preview")
+        st.caption("Sample of the last ingested rows")
+        st.dataframe(
+            stats['sample'],
+            width='stretch',
+            height=400,
+            hide_index=True
+        )
 
 
 # ----------------------------
