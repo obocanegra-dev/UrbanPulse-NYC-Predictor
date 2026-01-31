@@ -284,12 +284,13 @@ with tab2:
     st.pydeck_chart(
         pdk.Deck(
             layers=[layer],
+            map_style=None,
             initial_view_state=view_state,
             tooltip={
                 "html": "<b>Station:</b> {start_station_name}<br/><b>Trips:</b> {total_trips}"
             },
         ),
-        use_container_width=True
+        width='stretch'
     )
 
     hourly_df, weather_df = get_eda_stats()
@@ -478,6 +479,7 @@ with tab3:
         st.pydeck_chart(
             pdk.Deck(
                 layers=[layer],
+                map_style=None,
                 initial_view_state=view_state,
                 tooltip={
                     "html": "<b>{start_station_name}</b><br/>Demand: {predicted_demand}"
