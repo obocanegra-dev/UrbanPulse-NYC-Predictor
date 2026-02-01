@@ -65,9 +65,13 @@ def get_pipeline_stats():
 def get_aggregated_map_data():
     with duckdb.connect() as con:
         query = f"""
-            SELECT start_lat, start_lng, start_station_name, SUM(trip_count) as total_trips
+            SELECT
+                start_station_name,
+                AVG(start_lat) AS start_lat,
+                AVG(start_lng) AS start_lng,
+                SUM(trip_count) AS total_trips
             FROM '{DATA_PATH}'
-            GROUP BY 1, 2, 3
+            GROUP BY start_station_name
         """
         return con.execute(query).df()
 
@@ -134,8 +138,12 @@ def load_model_bundle():
 def get_unique_stations():
     with duckdb.connect() as con:
         query = f"""
-            SELECT DISTINCT start_station_name, start_lat, start_lng
+            SELECT
+                start_station_name,
+                AVG(start_lat) AS start_lat,
+                AVG(start_lng) AS start_lng
             FROM '{DATA_PATH}'
+            GROUP BY start_station_name
         """
         return con.execute(query).df()
 
