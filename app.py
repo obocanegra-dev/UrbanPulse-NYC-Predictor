@@ -140,6 +140,56 @@ def get_unique_stations():
         return con.execute(query).df()
 
 
+@st.cache_data
+def get_historical_hourly_demand(hour):
+    with duckdb.connect() as con:
+        query = f"""
+            WITH hourly_totals AS (
+                SELECT date_trunc('day', hour_timestamp) as date, SUM(trip_count) as total_trips
+                FROM '{DATA_PATH}'
+                WHERE hour_of_day = {hour}
+                GROUP BY 1
+            )
+            SELECT AVG(total_trips) FROM hourly_totals
+        """
+        return con.execute(query).fetchone()[0] or 0
+
+def plot_feature_importance(model):
+    if hasattr(model, 'feature_importances_'):
+        imp = model.feature_importances_
+        try:
+            names = model.feature_names_in_
+        except AttributeError:
+            names = [f"Feat {i}" for i in range(len(imp))]
+
+        df_imp = pd.DataFrame({'Feature': names, 'Importance': imp})
+        df_imp = df_imp.sort_values('Importance', ascending=False).head(10) # Top 10
+
+        chart = alt.Chart(df_imp).mark_bar(color='#FF4B4B').encode(
+            x=alt.X('Importance', title='Weight in Decision'),
+            y=alt.Y('Feature', sort='-x', title=None),
+            tooltip=['Feature', 'Importance']
+        ).properties(height=300)
+
+        return chart
+    else:
+        return None
+
+
+def get_feature_importance(model, feature_names):
+    importance = model.feature_importances_
+    df_imp = pd.DataFrame({
+        'Feature': feature_names,
+        'Importance': importance
+    }).sort_values('Importance', ascending=False).head(8)
+
+    chart = alt.Chart(df_imp).mark_bar(color='#FF4B4B').encode(
+        x=alt.X('Importance', title=None),
+        y=alt.Y('Feature', sort='-x', title=None),
+        tooltip=['Feature', 'Importance']
+    ).properties(height=200, title="Model Drivers (Why?)")
+    return chart
+
 # ----------------------------
 # Feature helpers
 # ----------------------------
@@ -462,48 +512,102 @@ with tab3:
 
     stations["color"] = stations["predicted_demand"].apply(get_color)
 
+    total_predicted_demand = stations["predicted_demand"].sum()
+
+    try:
+        with duckdb.connect() as con:
+            hist_query = f"""
+                SELECT AVG(hourly_sum)
+                FROM (
+                    SELECT hour_timestamp, SUM(trip_count) as hourly_sum
+                    FROM '{DATA_PATH}'
+                    WHERE hour_of_day = {input_hour}
+                    GROUP BY hour_timestamp
+                )
+            """
+            avg_historical_total = con.execute(hist_query).fetchone()[0] or 0
+    except Exception:
+        avg_historical_total = 0
+
+    diff = total_predicted_demand - avg_historical_total
+    pct_diff = (diff / avg_historical_total) * 100 if avg_historical_total > 0 else 0
+
+    kpi1, kpi2, kpi3 = st.columns(3)
+    with kpi1:
+        st.metric(
+            "Total City Demand (Forecast)",
+            f"{int(total_predicted_demand):,}",
+            help="Sum of predicted trips across all stations"
+        )
+    with kpi2:
+        st.metric(
+            "Vs. Historical Avg",
+            f"{int(avg_historical_total):,}",
+            delta=f"{diff:+.0f} ({pct_diff:+.1f}%)",
+            help=f"Comparison against average demand at {input_hour}:00"
+        )
+    with kpi3:
+        if pct_diff > 25:
+            st.warning("🔥 High Demand Surge expected!")
+        elif pct_diff < -25:
+            st.info("❄️ Lower demand than usual.")
+        else:
+            st.success("✅ Normal business operations.")
+
+    st.markdown("---")
+
     hotspots = (
         stations.sort_values("predicted_demand", ascending=False)
         .head(10)[["start_station_name", "predicted_demand"]]
     )
 
-    col_map, col_table = st.columns([3, 1])
+    layer = pdk.Layer(
+        "ScatterplotLayer",
+        stations,
+        get_position=["start_lng", "start_lat"],
+        get_radius="radius_norm",
+        get_fill_color="color",
+        pickable=True,
+    )
 
-    with col_map:
-        layer = pdk.Layer(
-            "ScatterplotLayer",
-            stations,
-            get_position=["start_lng", "start_lat"],
-            get_radius="radius_norm",
-            get_fill_color="color",
-            pickable=True,
+    view_state = pdk.ViewState(
+        latitude=40.74, longitude=-73.99, zoom=11.2, bearing=120
+    )
+
+    st.pydeck_chart(
+        pdk.Deck(
+            layers=[layer],
+            map_style=None,
+            initial_view_state=view_state,
+            tooltip={
+                "html": "<b>{start_station_name}</b><br/>Demand: {predicted_demand}"
+            },
         )
+    )
 
-        view_state = pdk.ViewState(
-            latitude=40.74, longitude=-73.99, zoom=11.5
+    col_left, col_right = st.columns(2)
+
+    with col_left:
+        st.subheader("Top Hotspots")
+        hotspots = (
+            stations.sort_values("predicted_demand", ascending=False)
+            .head(10)[["start_station_name", "predicted_demand"]]
         )
-
-        st.pydeck_chart(
-            pdk.Deck(
-                layers=[layer],
-                map_style=None,
-                initial_view_state=view_state,
-                tooltip={
-                    "html": "<b>{start_station_name}</b><br/>Demand: {predicted_demand}"
-                },
-            )
-        )
-
-    with col_table:
-        st.subheader("Top Predicted")
         st.dataframe(
             hotspots,
             hide_index=True,
-            width="stretch",
+            width='stretch',
             column_config={
                 "start_station_name": st.column_config.TextColumn("Station"),
-                "predicted_demand": st.column_config.NumberColumn(
-                    "Predicted Demand", format="%.1f"
+                "predicted_demand": st.column_config.ProgressColumn(
+                    "Demand", format="%.0f", min_value=0, max_value=max(stations["predicted_demand"])
                 ),
             },
         )
+
+    with col_right:
+        st.subheader("Model Logic")
+        st.caption("What factors influenced this prediction?")
+
+        xai_chart = get_feature_importance(model, required_features)
+        st.altair_chart(xai_chart, width='stretch', height=350)
