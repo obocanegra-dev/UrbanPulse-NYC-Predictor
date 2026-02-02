@@ -33,6 +33,10 @@ def add_basic_features(df):
     df["day_sin"] = np.sin(2 * np.pi * df["day_of_week"] / 7)
     df["day_cos"] = np.cos(2 * np.pi * df["day_of_week"] / 7)
 
+    df["month"] = df["hour_timestamp"].dt.month
+    df["month_sin"] = np.sin(2 * np.pi * df["month"] / 12)
+    df["month_cos"] = np.cos(2 * np.pi * df["month"] / 12)
+
     df["is_raining"] = (df["precipitation"] > 0.1).astype(int)
 
     grp = df.groupby("start_station_name")["trip_count"]
@@ -88,6 +92,7 @@ def train_model():
     features = [
         "hour_sin", "hour_cos",
         "day_sin", "day_cos",
+        "month_sin", "month_cos",
         "is_weekend",
         "temperature",
         "is_raining",
