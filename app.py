@@ -459,7 +459,7 @@ with tab3:
     station_stats = bundle["station_stats"]
     hourly_stats = bundle["hourly_stats"]
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
         input_hour = st.slider("Hour", 0, 23, 17)
     with c2:
@@ -474,6 +474,14 @@ with tab3:
             index=3,
         )
 
+    with c5:
+        input_month = st.selectbox(
+            "Month",
+            options=list(range(1, 13)),
+            format_func=lambda x: datetime(2000, x, 1).strftime('%B'),
+            index=datetime.now().month - 1
+        )
+
     stations = get_unique_stations()
     lag1_map, rolling3_map = prepare_hourly_features(hourly_stats)
 
@@ -486,6 +494,7 @@ with tab3:
 
     X_pred["hour_sin"], X_pred["hour_cos"] = cyclical(input_hour, 24)
     X_pred["day_sin"], X_pred["day_cos"] = cyclical(input_day, 7)
+    X_pred["month_sin"], X_pred["month_cos"] = cyclical(input_month, 12)
 
     avg_global = station_stats["station_avg_demand"].mean()
     station_avg = station_stats.set_index("start_station_name")["station_avg_demand"]
