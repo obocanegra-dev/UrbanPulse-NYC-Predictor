@@ -26,6 +26,7 @@ def get_target_month():
 
 YEAR, MONTH = get_target_month()
 MONTH_STR = f"{YEAR}{MONTH:02d}"
+PREV_YEAR = YEAR - 1
 
 
 def month_date_range(year, month):
@@ -168,14 +169,16 @@ def transform_and_load(df_weather):
     con.execute(f"CREATE OR REPLACE VIEW new_data_view AS {new_data_query}")
 
     if history_exists:
-        final_query = """
+        final_query = f"""
         SELECT *
-        FROM new_data_view
-        WHERE (start_station_name, hour_timestamp) NOT IN (
-            SELECT start_station_name, hour_timestamp FROM history_data
+        FROM history_data
+        WHERE NOT (
+            year(hour_timestamp) = {PREV_YEAR}
+            AND month(hour_timestamp) = {MONTH}
         )
         UNION ALL
-        SELECT * FROM history_data
+        SELECT *
+        FROM new_data_view
         ORDER BY hour_timestamp DESC
         """
     else:
