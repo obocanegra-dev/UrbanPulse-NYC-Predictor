@@ -41,6 +41,8 @@ def add_basic_features(df):
 
     grp = df.groupby("start_station_name")["trip_count"]
     df["trip_count_lag1"] = grp.shift(1)
+    df["trip_count_lag2"] = grp.shift(2)
+    df["trip_count_lag3"] = grp.shift(3)
     df["trip_count_rolling3"] = (
         grp.shift(1)
            .rolling(3, min_periods=1)
@@ -100,6 +102,8 @@ def train_model():
         "start_lat",
         "start_lng",
         "trip_count_lag1",
+        "trip_count_lag2",
+        "trip_count_lag3",
         "trip_count_rolling3",
     ]
     target = "trip_count"
@@ -109,7 +113,7 @@ def train_model():
 
     print("Training XGBoost...")
     model = xgb.XGBRegressor(
-        n_estimators=294,
+        n_estimators=350,
         max_depth=8,
         learning_rate=0.075,
         subsample=0.95,
