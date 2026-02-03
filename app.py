@@ -204,13 +204,24 @@ def get_feature_importance(model, feature_names):
 
 @st.cache_data
 def prepare_hourly_features(hourly_stats):
-    lag1_map, rolling3_map = {}, {}
+    lag1_map, lag2_map, lag3_map, rolling3_map = {}, {}, {}, {}
 
     for h in range(24):
         prev = (h - 1) % 24
-
         lag1_map[h] = (
             hourly_stats[hourly_stats["hour_of_day"] == prev]
+            .set_index("start_station_name")["avg_hourly_trips"]
+        )
+
+        prev2 = (h - 2) % 24
+        lag2_map[h] = (
+            hourly_stats[hourly_stats["hour_of_day"] == prev2]
+            .set_index("start_station_name")["avg_hourly_trips"]
+        )
+
+        prev3 = (h - 3) % 24
+        lag3_map[h] = (
+            hourly_stats[hourly_stats["hour_of_day"] == prev3]
             .set_index("start_station_name")["avg_hourly_trips"]
         )
 
@@ -221,7 +232,7 @@ def prepare_hourly_features(hourly_stats):
             .mean()
         )
 
-    return lag1_map, rolling3_map
+    return lag1_map, lag2_map, lag3_map, rolling3_map
 
 
 def cyclical(val, period):
@@ -483,7 +494,7 @@ with tab3:
         )
 
     stations = get_unique_stations()
-    lag1_map, rolling3_map = prepare_hourly_features(hourly_stats)
+    lag1_map, lag2_map, lag3_map, rolling3_map = prepare_hourly_features(hourly_stats)
 
     X_pred = stations.copy()
     X_pred["hour_of_day"] = input_hour
@@ -505,6 +516,12 @@ with tab3:
 
     X_pred["trip_count_lag1"] = (
         X_pred["start_station_name"].map(lag1_map[input_hour]).fillna(0)
+    )
+    X_pred["trip_count_lag2"] = (
+        X_pred["start_station_name"].map(lag2_map[input_hour]).fillna(0)
+    )
+    X_pred["trip_count_lag3"] = (
+        X_pred["start_station_name"].map(lag3_map[input_hour]).fillna(0)
     )
     X_pred["trip_count_rolling3"] = (
         X_pred["start_station_name"].map(rolling3_map[input_hour]).fillna(0)
