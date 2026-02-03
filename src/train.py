@@ -60,36 +60,24 @@ def add_basic_features(df):
 def train_model():
     df = load_data().sort_values("hour_timestamp")
 
-    split_idx = int(len(df) * 0.8)
-    train_df, test_df = df.iloc[:split_idx].copy(), df.iloc[split_idx:].copy()
-
-    # Station priors
     station_popularity = (
-        train_df.groupby("start_station_name")["trip_count"]
+        df.groupby("start_station_name")["trip_count"]
         .mean()
         .reset_index(name="station_avg_demand")
     )
 
     hourly_stats = (
-        train_df.groupby(["start_station_name", "hour_of_day"])["trip_count"]
+        df.groupby(["start_station_name", "hour_of_day"])["trip_count"]
         .mean()
         .reset_index(name="avg_hourly_trips")
     )
 
-    train_df = train_df.merge(
-        station_popularity, on="start_station_name", how="left"
-    )
-    test_df = test_df.merge(
-        station_popularity, on="start_station_name", how="left"
-    )
+    df = df.merge(station_popularity, on="start_station_name", how="left")
 
+    global_mean = df["trip_count"].mean()
+    df["station_avg_demand"] = df["station_avg_demand"].fillna(global_mean)
 
-    global_mean = train_df["trip_count"].mean()
-    train_df["station_avg_demand"] = train_df["station_avg_demand"].fillna(global_mean)
-    test_df["station_avg_demand"] = test_df["station_avg_demand"].fillna(global_mean)
-
-    train_df = add_basic_features(train_df)
-    test_df = add_basic_features(test_df)
+    df = add_basic_features(df)
 
     features = [
         "hour_sin", "hour_cos",
@@ -106,12 +94,14 @@ def train_model():
         "trip_count_lag3",
         "trip_count_rolling3",
     ]
+
     target = "trip_count"
 
-    X_train, y_train = train_df[features], train_df[target]
-    X_test, y_test = test_df[features], test_df[target]
+    X = df[features]
+    y = df[target]
 
     print("Training XGBoost...")
+
     model = xgb.XGBRegressor(
         n_estimators=350,
         max_depth=8,
@@ -127,19 +117,9 @@ def train_model():
         n_jobs=-1,
     )
 
-    model.fit(X_train, y_train)
+    model.fit(X, y)
 
-    preds = model.predict(X_test)
-    rmse = np.sqrt(mean_squared_error(y_test, preds))
-    print(f"Model RMSE: {rmse:.2f}")
-
-    baseline = np.full(len(y_test), y_train.mean())
-    baseline_rmse = np.sqrt(mean_squared_error(y_test, baseline))
-    print(f"Baseline RMSE: {baseline_rmse:.2f}")
-
-    print("Feature importance:")
-    for name, score in zip(features, model.feature_importances_):
-        print(f"  {name}: {score:.3f}")
+    print("Training complete.")
 
     artifact = {
         "model": model,
