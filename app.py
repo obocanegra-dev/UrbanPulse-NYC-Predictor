@@ -7,11 +7,13 @@ import joblib
 import os
 from datetime import datetime
 import duckdb
+from src.config import INPUT_FILE, MODEL_FILE
+from src.features import cyclical_encode, prepare_inference_lags
 
 st.set_page_config(page_title="UrbanPulse - NYC Bike Demand", layout="wide")
 
-DATA_PATH = "data/processed/daily_demand.parquet"
-MODEL_PATH = "model.pkl"
+DATA_PATH = INPUT_FILE
+MODEL_PATH = MODEL_FILE
 
 
 # ----------------------------
@@ -494,7 +496,7 @@ with tab3:
         )
 
     stations = get_unique_stations()
-    lag1_map, lag2_map, lag3_map, rolling3_map = prepare_hourly_features(hourly_stats)
+    lag1_map, lag2_map, lag3_map, rolling3_map = prepare_inference_lags(hourly_stats)
 
     X_pred = stations.copy()
     X_pred["hour_of_day"] = input_hour
@@ -503,9 +505,9 @@ with tab3:
     X_pred["is_raining"] = is_raining_val
     X_pred["is_weekend"] = int(input_day in [0, 6])
 
-    X_pred["hour_sin"], X_pred["hour_cos"] = cyclical(input_hour, 24)
-    X_pred["day_sin"], X_pred["day_cos"] = cyclical(input_day, 7)
-    X_pred["month_sin"], X_pred["month_cos"] = cyclical(input_month, 12)
+    X_pred["hour_sin"], X_pred["hour_cos"] = cyclical_encode(input_hour, 24)
+    X_pred["day_sin"], X_pred["day_cos"] = cyclical_encode(input_day, 7)
+    X_pred["month_sin"], X_pred["month_cos"] = cyclical_encode(input_month, 12)
 
     avg_global = station_stats["station_avg_demand"].mean()
     station_avg = station_stats.set_index("start_station_name")["station_avg_demand"]
