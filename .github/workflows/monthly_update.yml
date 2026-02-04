@@ -25,10 +25,10 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run ETL
-        run: python src/etl.py
+        run: python -m src.etl
 
       - name: Retrain model
-        run: python src/train.py
+        run: python -m src.train
 
       - name: Commit updated data and model
         run: |
