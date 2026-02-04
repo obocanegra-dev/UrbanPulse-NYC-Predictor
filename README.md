@@ -1,314 +1,215 @@
+# UrbanPulse — NYC Bike Demand Predictor
 
-# UrbanPulse — NYC Bike-Share Demand Predictor
+UrbanPulse is a Streamlit application for forecasting hourly Citi Bike demand in New York City.
+It combines historical trip data with public weather data and a machine learning model to estimate demand per station.
 
-
-
-![Python](https://img.shields.io/badge/Python-3.10-blue)
-
-![DuckDB](https://img.shields.io/badge/DuckDB-OLAP-yellow)
-
-![XGBoost](https://img.shields.io/badge/Model-XGBoost-orange)
-
-![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-red)
-
-![GitOps](https://img.shields.io/badge/GitOps-GitHub%20Actions-green)
-
-
-
-UrbanPulse is a small end-to-end data project that predicts hourly bike demand in NYC using Citi Bike trips and public weather data.
-
-It’s built to be simple, reproducible and cheap to run: everything lives in GitHub, DuckDB handles analytics, and Streamlit serves the app.
-
-
+The focus of the project is not just prediction, but also automation, reproducibility, and simple deployment using open-source tools.
 
 ---
 
+## Overview
 
+UrbanPulse pulls monthly Citi Bike trip data and joins it with hourly weather data from Open-Meteo.
+The processed dataset is stored in Parquet format and used both for model training and for an interactive dashboard.
 
-## Problem
+The app allows you to:
 
+* Inspect and validate the pipeline output
+* Explore demand patterns visually
+* Simulate scenarios and predict demand by station
 
-
-Bike-sharing systems constantly need to rebalance stations:
-
-
-
-* Residential stations empty out in the morning.
-
-* Business districts fill up at the same time.
-
-* Weather changes usage patterns more than most people expect.
-
-
-
-The goal here is not to be “perfect”, but to automate the pipeline and provide a clear way to explore demand and simulate scenarios.
-
-
+It is meant as a practical example of a lightweight, end-to-end data product.
 
 ---
 
+## Features
 
+* **Automated ETL**
+  Monthly pipeline that downloads raw data, joins weather, aggregates trips, and writes a compact Parquet file using DuckDB.
+
+* **Exploratory Analysis (EDA)**
+  Interactive maps and charts: station density, hourly demand curves, weather impact, and busiest stations.
+
+* **Machine Learning Model**
+  XGBoost regressor trained on time, weather, location, and historical demand features.
+
+* **Interactive Prediction**
+  User inputs (hour, temperature, rain, day, month) generate real-time station-level forecasts.
+
+* **Scheduled Updates**
+  GitHub Actions refreshes the data and retrains the model every month.
+
+* **Basic Data Quality Checks**
+  Row counts, schema, null values, and last update timestamp are visible in the app.
+
+---
 
 ## Architecture
 
-
-
-No cloud warehouse, no paid services.
-
-GitHub Actions runs the pipeline, DuckDB does the heavy lifting.
-
-
-
-```mermaid
-
-graph LR
-
-A[Citi Bike S3] -->|Extract| B[GitHub Actions]
-
-C[Open-Meteo API] -->|Extract| B
-
-B -->|"Transform (DuckDB)"| D[daily_demand.parquet]
-
-D -->|Load| E[Streamlit App]
-
-E -->|Inference| F[XGBoost Regressor]
-
-```
-
-
-
-### Data Flow
-
-
-
-1.  **Ingestion**
-
-A scheduled GitHub Action downloads Citi Bike data and pulls weather from Open-Meteo.
-
-
-
-2.  **Transformation**
-
-DuckDB cleans, aggregates and joins everything in memory.
-
-
-
-3.  **Storage**
-
-The result is a small Parquet file committed back to the repo.
-
-
-
-4.  **Serving**
-
-Streamlit loads the data and the trained model to run predictions.
-
-
-
----
-
-
-
-## Model & Features
-
-
-
-The model is an **XGBoost Regressor** trained on aggregated hourly demand.
-
-
-
-Main features:
-
-
-
-*  **Cyclical time encoding**
-
-Sine/Cosine for `hour` and `day_of_week` so midnight and 23:00 are close.
-
-
-
-*  **Target encoding (stations)**
-
-Historical station demand profiles computed only from training data.
-
-
-
-*  **Lag features**
-
-
-
-*  `trip_count_lag1`: previous hour demand
-
-*  `trip_count_rolling3`: 3-hour rolling mean
-
-
-
-> In the app, lag values are approximated using historical lookups derived from training data to avoid leakage.
-
-
-
----
-
-
-
-## Dashboard
-
-
-
-The app is split into three views:
-
-
-
-### 1. Pipeline Status
-
-
-
-* File size, last update, row count
-
-* Raw data preview
-
-
-
-### 2. EDA
-
-
-
-*  **3D map** (PyDeck ColumnLayer) for trip density
-
-*  **Charts** for top stations and hourly patterns
-
-
-
-### 3. Demand Prediction
-
-
-
-* Sliders for hour, temperature, rain
-
-*  **Scatterplot map** of predicted demand
-
-* Top stations by expected demand
-
-
-
----
-
-
-
-## Repository Layout
-
-
+The system is fully local and Git-based, with no external warehouse or paid services.
+
+* **ETL** runs in GitHub Actions
+* **DuckDB** handles transformations
+* **Parquet** stores the final dataset
+* **Streamlit** serves the dashboard
 
 ```text
-
-├── .github/workflows # Monthly ETL + retraining
-
-├── data/
-
-│ ├── raw/ # Temporary CSVs (gitignored)
-
-│ └── processed/ # Aggregated parquet data
-
-├── src/
-
-│ ├── etl.py # DuckDB pipeline
-
-│ └── train.py # Feature engineering + XGBoost
-
-├── app.py # Streamlit app
-
-├── requirements.txt
-
-└── README.md
-
+Citi Bike S3 + Open-Meteo
+        ↓
+   GitHub Actions
+        ↓
+     DuckDB ETL
+        ↓
+  daily_demand.parquet
+        ↓
+  Model Training → model.pkl
+        ↓
+     Streamlit App
 ```
-
-
 
 ---
 
+## Code Structure
 
+* **src/etl.py**
+  Downloads data, cleans it, aggregates hourly demand, and joins weather.
 
-## Running Locally
+* **src/train.py**
+  Loads the Parquet file, engineers features, trains XGBoost, and saves the model.
 
+* **src/features.py**
+  Central feature logic (time encoding, lags, encodings).
 
+* **src/inference.py**
+  Builds feature rows for new user inputs.
 
-Clone:
+* **src/plots.py**
+  Chart and map utilities (Altair + PyDeck).
 
+* **src/loader.py**
+  Cached loading helpers for Streamlit.
 
+* **src/config.py**
+  Paths, feature lists, constants.
+
+* **app.py**
+  Main Streamlit application (Pipeline, EDA, Prediction tabs).
+
+---
+
+## Data Sources
+
+* **Citi Bike Trip Data**
+  Monthly CSV files from the public S3 bucket.
+
+* **Open-Meteo Weather API**
+  Hourly temperature, precipitation, and wind for NYC.
+
+* **Processed Dataset**
+  Hourly demand per station, merged with weather and time features, stored in:
+
+  ```
+  data/processed/daily_demand.parquet
+  ```
+
+---
+
+## Model
+
+* **Algorithm:** XGBoost Regressor
+* **Target:** `trip_count` (hourly trips per station)
+
+### Features
+
+* **Cyclical time**
+
+  * `hour_sin`, `hour_cos`
+  * `day_sin`, `day_cos`
+  * `month_sin`, `month_cos`
+
+* **Binary**
+
+  * `is_weekend`
+  * `is_raining`
+
+* **Continuous**
+
+  * `temperature`
+  * `start_lat`, `start_lng`
+
+* **Encodings**
+
+  * `station_avg_demand`
+
+* **Lag features**
+
+  * `trip_count_lag1`
+  * `trip_count_lag2`
+  * `trip_count_lag3`
+  * `trip_count_rolling3`
+
+Training data is ordered by time and lag features are computed per station to avoid leakage.
+At inference time, lag values are approximated using precomputed historical statistics.
+
+---
+
+## Installation
 
 ```bash
-
-git  clone  https://github.com/obocanegra-dev/UrbanPulse-NYC-Predictor.git
-
-cd  UrbanPulse-NYC-Predictor
-
+git clone https://github.com/your-username/UrbanPulse-NYC-Predictor.git
+cd UrbanPulse-NYC-Predictor
+pip install -r requirements.txt
 ```
-
-
-
-Install:
-
-
-
-```bash
-
-pip  install  -r  requirements.txt
-
-```
-
-
 
 Run ETL:
 
-
-
 ```bash
-
-python  src/etl.py
-
+python -m src.etl
 ```
-
-
 
 Train model:
 
-
-
 ```bash
-
-python  src/train.py
-
+python -m src.train
 ```
-
-
 
 Launch app:
 
-
-
 ```bash
-
-streamlit  run  app.py
-
+streamlit run app.py
 ```
-
-
 
 ---
 
+## App Sections
 
+### Pipeline
+
+* File size, rows, schema, null counts
+* Last update timestamp
+
+### EDA
+
+* 3D density map
+* Hourly trends (weekday vs weekend)
+* Weather vs demand
+* Top stations
+
+### Prediction
+
+* Input sliders for time and weather
+* Station-level demand forecast
+* Hotspot map and top 10 stations
+* City-wide demand KPI
+
+---
 
 ## Tech Stack
 
-
-
-*  **Python 3.10**
-
-*  **DuckDB** (in-memory analytics)
-
-*  **GitHub Actions** (orchestration)
-
-*  **XGBoost + scikit-learn**
-
-*  **Streamlit, PyDeck, Altair**
+* Python
+* DuckDB
+* XGBoost
+* Scikit-learn
+* Streamlit
+* PyDeck, Altair
+* GitHub Actions
