@@ -4,11 +4,14 @@ import numpy as np
 import pydeck as pdk
 import altair as alt
 import joblib
+import sys
 import os
 from datetime import datetime
 import duckdb
 from src.config import INPUT_FILE, MODEL_FILE
 from src.features import cyclical_encode, prepare_inference_lags
+
+sys.path.append(os.path.dirname(__file__))
 
 st.set_page_config(page_title="UrbanPulse - NYC Bike Demand", layout="wide")
 
