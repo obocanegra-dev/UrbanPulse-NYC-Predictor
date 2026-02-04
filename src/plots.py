@@ -21,7 +21,7 @@ def plot_map_density(data):
     )
 
     view = pdk.ViewState(latitude=40.74, longitude=-73.99, zoom=11.2, pitch=60, bearing=120)
-    return pdk.Deck(layers=[layer], initial_view_state=view, tooltip={"html": "<b>Station:</b> {start_station_name}<br/><b>Trips:</b> {total_trips}"})
+    return pdk.Deck(layers=[layer], initial_view_state=view, map_style=None, tooltip={"html": "<b>Station:</b> {start_station_name}<br/><b>Trips:</b> {total_trips}"})
 
 def plot_hourly_trend(df):
     return alt.Chart(df).mark_line(strokeWidth=3).encode(
@@ -85,4 +85,4 @@ def plot_prediction_map(stations):
         pickable=True,
     )
     view = pdk.ViewState(latitude=40.74, longitude=-73.99, zoom=11.2, bearing=120)
-    return pdk.Deck(layers=[layer], initial_view_state=view, tooltip={"html": "<b>{start_station_name}</b><br/>Pred: {predicted_demand}"})
+    return pdk.Deck(layers=[layer], initial_view_state=view, map_style=None, tooltip={"html": "<b>{start_station_name}</b><br/>Pred: {predicted_demand}"})
