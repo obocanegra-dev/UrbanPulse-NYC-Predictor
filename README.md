@@ -1,39 +1,36 @@
+# UrbanPulse — NYC Bike Demand Predictor
 
-# UrbanPulse — NYC Bike-Share Demand Predictor
+[![Live App](https://img.shields.io/badge/Live%20App-Streamlit-blue)](https://urbanpulse-nyc-predictor.streamlit.app/)
 
+UrbanPulse is a Streamlit application for forecasting hourly Citi Bike demand in New York City.
+It combines historical trip data with public weather data and a machine learning model to estimate demand per station.
 
-
-![Python](https://img.shields.io/badge/Python-3.10-blue)
-
-![DuckDB](https://img.shields.io/badge/DuckDB-OLAP-yellow)
-
-![XGBoost](https://img.shields.io/badge/Model-XGBoost-orange)
-
-![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-red)
-
-![GitOps](https://img.shields.io/badge/GitOps-GitHub%20Actions-green)
-
-
-
-UrbanPulse is a small end-to-end data project that predicts hourly bike demand in NYC using Citi Bike trips and public weather data.
-
-It’s built to be simple, reproducible and cheap to run: everything lives in GitHub, DuckDB handles analytics, and Streamlit serves the app.
-
-
+The focus of the project is not just prediction, but also automation, reproducibility, and simple deployment using open-source tools.
 
 ---
 
+## Overview
 
+UrbanPulse pulls monthly Citi Bike trip data and joins it with hourly weather data from Open-Meteo.
+The processed dataset is stored in Parquet format and used both for model training and for an interactive dashboard.
 
-## Problem
+The app allows you to:
 
+* Inspect and validate the pipeline output
+* Explore demand patterns visually
+* Simulate scenarios and predict demand by station
 
+It is meant as a practical example of a lightweight, end-to-end data product.
 
-Bike-sharing systems constantly need to rebalance stations:
+---
 
+## Features
 
+* **Automated ETL**
+  Monthly pipeline that downloads raw data, joins weather, aggregates trips, and writes a compact Parquet file using DuckDB.
 
-* Residential stations empty out in the morning.
+* **Exploratory Analysis (EDA)**
+  Interactive maps and charts: station density, hourly demand curves, weather impact, and busiest stations.
 
 * **Machine Learning Model**
   XGBoost regressor trained on time, weather, location, and historical demand features.
