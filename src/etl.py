@@ -4,14 +4,12 @@ import requests
 import duckdb
 import pandas as pd
 from datetime import datetime, timedelta
+from src.config import (
+    RAW_DIR, PROCESSED_DIR, INPUT_FILE,
+    WEATHER_URL, CITIBIKE_S3
+)
 
 LAT, LON = 40.71, -74.01
-RAW_DIR = "data/raw"
-PROCESSED_DIR = "data/processed"
-OUTPUT_FILE = os.path.join(PROCESSED_DIR, "daily_demand.parquet")
-WEATHER_URL = "https://archive-api.open-meteo.com/v1/archive"
-CITIBIKE_S3 = "https://s3.amazonaws.com/tripdata"
-
 
 # ----------------------------
 # Date helpers
@@ -116,9 +114,9 @@ def transform_and_load(df_weather):
     con = duckdb.connect(":memory:")
     con.register("weather_data", df_weather)
 
-    history_exists = os.path.exists(OUTPUT_FILE)
+    history_exists = os.path.exists(INPUT_FILE)
     if history_exists:
-        con.execute(f"CREATE OR REPLACE VIEW history_data AS SELECT * FROM '{OUTPUT_FILE}'")
+        con.execute(f"CREATE OR REPLACE VIEW history_data AS SELECT * FROM '{INPUT_FILE}'")
 
     csv_glob = os.path.join(RAW_DIR, "*.csv")
 
@@ -184,8 +182,8 @@ def transform_and_load(df_weather):
     else:
         final_query = "SELECT * FROM new_data_view ORDER BY hour_timestamp DESC"
 
-    print(f"Saving data to {OUTPUT_FILE}")
-    con.execute(f"COPY ({final_query}) TO '{OUTPUT_FILE}' (FORMAT 'parquet')")
+    print(f"Saving data to {INPUT_FILE}")
+    con.execute(f"COPY ({final_query}) TO '{INPUT_FILE}' (FORMAT 'parquet')")
     con.close()
 
 
